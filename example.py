@@ -1,10 +1,60 @@
 import numpy as np
 import ioh  # Make sure to use version >= 0.3.6
+from math import sqrt
 
 # import sys
 # import argparse
 # import os
 import warnings
+
+
+class BruteForce:
+    """An example of Random Search."""
+
+    def __init__(self, budget_factor: int = 1000):
+        self.budget_factor = budget_factor
+
+    def local_step(self, x):
+        k = np.random.randint(self.d)
+        y = x[:]
+        y[k] = np.random.rand()  # TODO
+        return y
+
+    def __call__(self, func: ioh.problem.RealSingleObjective):
+        self.d = len(func.bounds.lb)
+        x = np.random.uniform(func.bounds.lb, func.bounds.ub)
+        N = int(sqrt(self.budget_factor * func.meta_data.n_variables))
+        for i in range(N):
+            for j in range(N):
+                x[0] = i / N
+                x[1] = j / N
+                func(x)
+        return func.state.current_best
+
+
+class RLS:
+    """An example of Random Search."""
+
+    def __init__(self, budget_factor: int = 1000):
+        self.budget_factor = budget_factor
+
+    def local_step(self, x):
+        k = np.random.randint(self.d)
+        y = x[:]
+        y[k] = np.random.rand()  # TODO
+        return y
+
+    def __call__(self, func: ioh.problem.RealSingleObjective):
+        self.d = len(func.bounds.lb)
+        x = np.random.uniform(func.bounds.lb, func.bounds.ub)
+        fx = func(x)
+        for _ in range(self.budget_factor * func.meta_data.n_variables):
+            y = self.local_step(x)
+            fy = func(y)
+            if fy > fx:
+                x = y
+        # We don't have to explicitly track the best-so-far, the problem's internal state takes care of that
+        return func.state.current_best
 
 
 class RandomSearch:
@@ -44,6 +94,8 @@ def run_randomsearch(fid: int, dim: int, log_dir: str = None, verbose: bool = Tr
     # Make the algorithm and set how we want it to be called in the logs
     algname = "RandomSearch"
     algorithm = RandomSearch()
+    # algorithm = RLS()
+    # algorithm = BruteForce()
 
     # If we want to store data, we need to make a logger
     if log_dir is not None:
@@ -80,6 +132,30 @@ def run_randomsearch(fid: int, dim: int, log_dir: str = None, verbose: bool = Tr
         logger.close()
 
 
+def benchmark(fid: int, dim: int):
+    # Make the algorithm and set how we want it to be called in the logs
+
+    for algo in [RandomSearch(), RLS(), BruteForce()]:
+        # Loop over the instances, and create the problems
+        bests = []
+        for iid in range(5):
+            func = ioh.get_problem(
+                fid, dimension=dim, instance=iid, problem_type=ioh.ProblemType.REAL
+            )
+            for rep in range(1):
+                # Set the seed for reproducibility
+                np.random.seed(rep)
+                # Run the algorithm
+                algo(func)
+
+                best = func.state.current_best.y
+                bests.append(best)
+
+                # Reset the state of the problem
+                func.reset()
+        print(bests)
+
+
 if __name__ == "__main__":
     warnings.filterwarnings("ignore", category=RuntimeWarning)
     warnings.filterwarnings("ignore", category=FutureWarning)
@@ -91,4 +167,5 @@ if __name__ == "__main__":
     #         for dim in dims:
     #             run_randomsearch(fid, dim, log_dir = ".", verbose = False)
 
-    run_randomsearch(30, 2)
+    # run_randomsearch(39, 2, log_dir="log")
+    benchmark(39, 2)
