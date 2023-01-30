@@ -63,6 +63,7 @@ class LocalSearch:
             fy = func(y)
             if fy > fx:
                 x = y
+                fx = fy
         return func.state.current_best
 
 
@@ -129,6 +130,7 @@ class GaussianReset:
             fy = func(y)
             if fy > fx:
                 x = y
+                fx = fy
                 rep = 0
             else:
                 rep += 1
@@ -300,9 +302,11 @@ class GaussianCrossover:
                 fy = func(y)
                 if fy > fx0:
                     x0 = y
+                    fx0 = fy
             else:
                 y = self.downstep(x0, x1)
                 fy = func(y)
                 if fy > fx1:
                     x1 = y
+                    fx1 = y
         return func.state.current_best
