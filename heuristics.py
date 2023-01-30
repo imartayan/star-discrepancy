@@ -1,7 +1,7 @@
 import ioh
 import numpy as np
 
-DEFAULT_BUGDET_FACTOR = 200
+DEFAULT_BUGDET_FACTOR = 100
 
 
 """
@@ -152,11 +152,13 @@ class MultiLocalSearch:
         n = func.meta_data.n_variables
         d = len(func.bounds.lb)
         n_calls = self.budget_factor * n * d
-        xs = [
-            np.random.uniform(func.bounds.lb, func.bounds.ub)
-            for _ in range(self.n_points)
-        ]
-        fxs = [func(x) for x in xs]
+        xs = np.array(
+            [
+                np.random.uniform(func.bounds.lb, func.bounds.ub)
+                for _ in range(self.n_points)
+            ]
+        )
+        fxs = np.array([func(x) for x in xs])
         for _ in range(n_calls):
             i = np.random.randint(len(xs))
             y = self.local_step(xs[i])
@@ -209,13 +211,17 @@ class WeightedMultiLocalSearch:
         n = func.meta_data.n_variables
         d = len(func.bounds.lb)
         n_calls = self.budget_factor * n * d
-        xs = [
-            np.random.uniform(func.bounds.lb, func.bounds.ub)
-            for _ in range(self.n_points)
-        ]
-        fxs = [func(x) for x in xs]
-        fxs_sum = sum(fxs)
-        weights = [fx / fxs_sum for fx in fxs]
+        xs = np.array(
+            [
+                np.random.uniform(func.bounds.lb, func.bounds.ub)
+                for _ in range(self.n_points)
+            ]
+        )
+        fxs = np.array([func(x) for x in xs])
+        fsum = fxs.sum()
+        weights = fxs / fsum
+        weights = np.exp(weights)
+        weights /= weights.sum()
         for _ in range(n_calls):
             i = np.random.choice(list(range(len(xs))), p=weights)
             y = self.local_step(xs[i])
@@ -223,8 +229,10 @@ class WeightedMultiLocalSearch:
             if fy > fxs[i]:
                 xs[i] = y
                 fxs[i] = fy
-                fxs_sum = sum(fxs)
-                weights = [fx / fxs_sum for fx in fxs]
+                fsum = fxs.sum()
+                weights = fxs / fsum
+                weights = np.exp(weights)
+                weights /= weights.sum()
         return func.state.current_best
 
 
