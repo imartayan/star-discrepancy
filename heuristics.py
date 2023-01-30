@@ -136,6 +136,124 @@ class GaussianReset:
 
 
 """
+Multiple Local Search at once
+"""
+
+
+class MultiLocalSearch:
+    def __init__(self, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
+        self.budget_factor = budget_factor
+        self.n_points = n_points
+
+    def local_step(self, x):
+        raise NotImplementedError
+
+    def __call__(self, func: ioh.problem.RealSingleObjective):
+        n = func.meta_data.n_variables
+        d = len(func.bounds.lb)
+        n_calls = self.budget_factor * n * d
+        xs = [
+            np.random.uniform(func.bounds.lb, func.bounds.ub)
+            for _ in range(self.n_points)
+        ]
+        fxs = [func(x) for x in xs]
+        for _ in range(n_calls):
+            i = np.random.randint(len(xs))
+            y = self.local_step(xs[i])
+            fy = func(y)
+            if fy > fxs[i]:
+                xs[i] = y
+                fxs[i] = fy
+        return func.state.current_best
+
+
+class GaussianMultiLocalSearch(MultiLocalSearch):
+    def __init__(self, sigma, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
+        self.budget_factor = budget_factor
+        self.sigma = sigma
+        self.n_points = n_points
+
+    def local_step(self, x):
+        y = x + np.random.normal(scale=self.sigma, size=len(x))
+        return np.clip(y, 0, 1)
+
+
+class ExpMultiLocalSearch(MultiLocalSearch):
+    def __init__(self, beta, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
+        self.budget_factor = budget_factor
+        self.beta = beta
+        self.n_points = n_points
+
+    def local_step(self, x):
+        if np.random.random() < 0.5:
+            y = x + np.random.exponential(scale=self.beta, size=len(x))
+        else:
+            y = x - np.random.exponential(scale=self.beta, size=len(x))
+        return np.clip(y, 0, 1)
+
+
+"""
+Weighted Multiple Local Search at once
+"""
+
+
+class WeightedMultiLocalSearch:
+    def __init__(self, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
+        self.budget_factor = budget_factor
+        self.n_points = n_points
+
+    def local_step(self, x):
+        raise NotImplementedError
+
+    def __call__(self, func: ioh.problem.RealSingleObjective):
+        n = func.meta_data.n_variables
+        d = len(func.bounds.lb)
+        n_calls = self.budget_factor * n * d
+        xs = [
+            np.random.uniform(func.bounds.lb, func.bounds.ub)
+            for _ in range(self.n_points)
+        ]
+        fxs = [func(x) for x in xs]
+        fxs_sum = sum(fxs)
+        weights = [fx / fxs_sum for fx in fxs]
+        for _ in range(n_calls):
+            i = np.random.choice(list(range(len(xs))), p=weights)
+            y = self.local_step(xs[i])
+            fy = func(y)
+            if fy > fxs[i]:
+                xs[i] = y
+                fxs[i] = fy
+                fxs_sum = sum(fxs)
+                weights = [fx / fxs_sum for fx in fxs]
+        return func.state.current_best
+
+
+class GaussianWeightedMultiLocalSearch(WeightedMultiLocalSearch):
+    def __init__(self, sigma, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
+        self.budget_factor = budget_factor
+        self.sigma = sigma
+        self.n_points = n_points
+
+    def local_step(self, x):
+        y = x + np.random.normal(scale=self.sigma, size=len(x))
+        return np.clip(y, 0, 1)
+
+
+class ExpWeightedMultiLocalSearch(WeightedMultiLocalSearch):
+    def __init__(self, beta, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
+        self.budget_factor = budget_factor
+        self.beta = beta
+        self.n_points = n_points
+
+    def local_step(self, x):
+        if np.random.random() < 0.5:
+            y = x + np.random.exponential(scale=self.beta, size=len(x))
+        else:
+            y = x - np.random.exponential(scale=self.beta, size=len(x))
+        return np.clip(y, 0, 1)
+
+
+"""
 Local Search with Crossover (not good yet)
 """
 
