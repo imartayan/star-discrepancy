@@ -1,7 +1,28 @@
 import ioh
 import numpy as np
 
-DEFAULT_BUGDET_FACTOR = 100
+
+def gaussian_step(x, avg_step):
+    sigma = avg_step * np.sqrt(np.pi / 2)
+    y = x + np.random.normal(scale=sigma, size=len(x))
+    return np.clip(y, 0, 1)
+
+
+def exp_step(x, avg_step):
+    beta = avg_step
+    sign = np.random.choice([-1, 1], size=len(x))
+    step = np.random.exponential(scale=beta, size=len(x))
+    y = x + sign * step
+    return np.clip(y, 0, 1)
+
+
+def biased_exp_step(x, avg_step):
+    beta = avg_step
+    if np.random.randint(2) == 0:
+        y = x + np.random.exponential(scale=beta, size=len(x))
+    else:
+        y = x - np.random.exponential(scale=beta, size=len(x))
+    return np.clip(y, 0, 1)
 
 
 """
@@ -9,10 +30,12 @@ Naive Heuristics
 """
 
 
-class RandomSearch:
-    def __init__(self, budget_factor=DEFAULT_BUGDET_FACTOR):
+class Search:
+    def __init__(self, budget_factor):
         self.budget_factor = budget_factor
 
+
+class RandomSearch(Search):
     def __call__(self, func: ioh.problem.RealSingleObjective):
         n = func.meta_data.n_variables
         d = len(func.bounds.lb)
@@ -23,10 +46,7 @@ class RandomSearch:
         return func.state.current_best
 
 
-class BruteForce:
-    def __init__(self, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
-
+class BruteForce(Search):
     def __call__(self, func: ioh.problem.RealSingleObjective):
         n = func.meta_data.n_variables
         d = len(func.bounds.lb)
@@ -45,12 +65,10 @@ Local Search
 """
 
 
-class LocalSearch:
-    def __init__(self, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
-
-    def local_step(self, x):
-        raise NotImplementedError
+class LocalSearch(Search):
+    def __init__(self, avg_step, budget_factor):
+        super().__init__(budget_factor=budget_factor)
+        self.avg_step = avg_step
 
     def __call__(self, func: ioh.problem.RealSingleObjective):
         n = func.meta_data.n_variables
@@ -67,17 +85,7 @@ class LocalSearch:
         return func.state.current_best
 
 
-class GaussianLocalSearch(LocalSearch):
-    def __init__(self, sigma, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
-        self.sigma = sigma
-
-    def local_step(self, x):
-        y = x + np.random.normal(scale=self.sigma, size=len(x))
-        return np.clip(y, 0, 1)
-
-
-class GaussianSingleAxis(GaussianLocalSearch):
+class GaussianSingleAxis(LocalSearch):
     def local_step(self, x):
         k = np.random.randint(len(x))
         y = x[:]
@@ -85,17 +93,19 @@ class GaussianSingleAxis(GaussianLocalSearch):
         return np.clip(y, 0, 1)
 
 
-class ExpLocalSearch(LocalSearch):
-    def __init__(self, beta, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
-        self.beta = beta
-
+class GaussianLocalSearch(LocalSearch):
     def local_step(self, x):
-        if np.random.random() < 0.5:
-            y = x + np.random.exponential(scale=self.beta, size=len(x))
-        else:
-            y = x - np.random.exponential(scale=self.beta, size=len(x))
-        return np.clip(y, 0, 1)
+        return gaussian_step(x, self.avg_step)
+
+
+class ExpLocalSearch(LocalSearch):
+    def local_step(self, x):
+        return exp_step(x, self.avg_step)
+
+
+# class TrueExpLocalSearch(LocalSearch):
+#     def local_step(self, x):
+#         return exp_step(x, self.avg_step)
 
 
 """
@@ -103,15 +113,10 @@ Local Search with Resets
 """
 
 
-class GaussianReset:
-    def __init__(self, sigma, threshold_factor=1, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
+class GaussianReset(GaussianLocalSearch):
+    def __init__(self, avg_step, threshold_factor, budget_factor):
+        super().__init__(avg_step=avg_step, budget_factor=budget_factor)
         self.threshold_factor = threshold_factor
-        self.sigma = sigma
-
-    def local_step(self, x):
-        y = x + np.random.normal(scale=self.sigma, size=len(x))
-        return np.clip(y, 0, 1)
 
     def __call__(self, func: ioh.problem.RealSingleObjective):
         n = func.meta_data.n_variables
@@ -142,13 +147,10 @@ Multiple Local Search at once
 """
 
 
-class MultiLocalSearch:
-    def __init__(self, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
+class MultiLocalSearch(LocalSearch):
+    def __init__(self, avg_step, n_points, budget_factor):
+        super().__init__(avg_step=avg_step, budget_factor=budget_factor)
         self.n_points = n_points
-
-    def local_step(self, x):
-        raise NotImplementedError
 
     def __call__(self, func: ioh.problem.RealSingleObjective):
         n = func.meta_data.n_variables
@@ -172,28 +174,13 @@ class MultiLocalSearch:
 
 
 class GaussianMultiLocalSearch(MultiLocalSearch):
-    def __init__(self, sigma, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
-        self.sigma = sigma
-        self.n_points = n_points
-
     def local_step(self, x):
-        y = x + np.random.normal(scale=self.sigma, size=len(x))
-        return np.clip(y, 0, 1)
+        return gaussian_step(x, self.avg_step)
 
 
 class ExpMultiLocalSearch(MultiLocalSearch):
-    def __init__(self, beta, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
-        self.beta = beta
-        self.n_points = n_points
-
     def local_step(self, x):
-        if np.random.random() < 0.5:
-            y = x + np.random.exponential(scale=self.beta, size=len(x))
-        else:
-            y = x - np.random.exponential(scale=self.beta, size=len(x))
-        return np.clip(y, 0, 1)
+        return exp_step(x, self.avg_step)
 
 
 """
@@ -201,14 +188,7 @@ Weighted Multiple Local Search at once
 """
 
 
-class WeightedMultiLocalSearch:
-    def __init__(self, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
-        self.n_points = n_points
-
-    def local_step(self, x):
-        raise NotImplementedError
-
+class WeightedMultiLocalSearch(MultiLocalSearch):
     def __call__(self, func: ioh.problem.RealSingleObjective):
         n = func.meta_data.n_variables
         d = len(func.bounds.lb)
@@ -220,47 +200,65 @@ class WeightedMultiLocalSearch:
             ]
         )
         fxs = np.array([func(x) for x in xs])
-        fsum = fxs.sum()
-        weights = fxs / fsum
-        weights = np.exp(weights)
+        indices = np.array(range(self.n_points))
+        scores = fxs / fxs.sum()
+        weights = np.exp(scores)
         weights /= weights.sum()
         for _ in range(n_calls):
-            i = np.random.choice(list(range(len(xs))), p=weights)
+            i = np.random.choice(indices, p=weights)
             y = self.local_step(xs[i])
             fy = func(y)
             if fy > fxs[i]:
                 xs[i] = y
                 fxs[i] = fy
-                fsum = fxs.sum()
-                weights = fxs / fsum
-                weights = np.exp(weights)
+                scores = fxs / fxs.sum()
+                weights = np.exp(scores)
                 weights /= weights.sum()
         return func.state.current_best
 
 
 class GaussianWeightedMultiLocalSearch(WeightedMultiLocalSearch):
-    def __init__(self, sigma, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
-        self.sigma = sigma
-        self.n_points = n_points
-
     def local_step(self, x):
-        y = x + np.random.normal(scale=self.sigma, size=len(x))
-        return np.clip(y, 0, 1)
+        return gaussian_step(x, self.avg_step)
 
 
 class ExpWeightedMultiLocalSearch(WeightedMultiLocalSearch):
-    def __init__(self, beta, n_points=5, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
-        self.beta = beta
-        self.n_points = n_points
-
     def local_step(self, x):
-        if np.random.random() < 0.5:
-            y = x + np.random.exponential(scale=self.beta, size=len(x))
-        else:
-            y = x - np.random.exponential(scale=self.beta, size=len(x))
-        return np.clip(y, 0, 1)
+        return exp_step(x, self.avg_step)
+
+
+"""
+Adaptive Local Search
+"""
+
+
+class AdaptiveLocalSearch(LocalSearch):
+    def __call__(self, func: ioh.problem.RealSingleObjective):
+        n = func.meta_data.n_variables
+        d = len(func.bounds.lb)
+        n_calls = self.budget_factor * n * d
+        x = np.random.uniform(func.bounds.lb, func.bounds.ub)
+        fx = func(x)
+        for _ in range(n_calls):
+            y = self.local_step(x)
+            fy = func(y)
+            if fy > fx:
+                avg_step = np.mean(np.abs(y - x))
+                alpha = 0.995
+                self.avg_step = alpha * self.avg_step + (1 - alpha) * avg_step
+                x = y
+                fx = fy
+        return func.state.current_best
+
+
+class GaussianAdaptiveLocalSearch(AdaptiveLocalSearch):
+    def local_step(self, x):
+        return gaussian_step(x, self.avg_step)
+
+
+class ExpAdaptiveLocalSearch(AdaptiveLocalSearch):
+    def local_step(self, x):
+        return exp_step(x, self.avg_step)
 
 
 """
@@ -268,13 +266,7 @@ Local Search with Crossover (not good yet)
 """
 
 
-class GaussianCrossover:
-    # FIXME
-
-    def __init__(self, sigma, budget_factor=DEFAULT_BUGDET_FACTOR):
-        self.budget_factor = budget_factor
-        self.sigma = sigma
-
+class GaussianCrossover(LocalSearch):
     def upstep(self, x0, x1):
         axis = [i for i, (u, v) in enumerate(zip(x0, x1)) if u < v]
         y = x0[:]
@@ -297,7 +289,7 @@ class GaussianCrossover:
         fx0 = func(x0)
         fx1 = func(x1)
         for _ in range(n_calls):
-            if np.random.random() < 0.5:
+            if np.random.randint(2) == 0:
                 y = self.upstep(x0, x1)
                 fy = func(y)
                 if fy > fx0:
