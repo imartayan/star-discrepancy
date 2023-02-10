@@ -1,5 +1,4 @@
 import ioh
-import warnings
 import numpy as np
 import heuristics as hr
 from statistics import mean, stdev
@@ -52,8 +51,6 @@ def benchmark(fid: int, dim: int, rep: int = 10):
 
 
 if __name__ == "__main__":
-    warnings.filterwarnings("ignore", category=RuntimeWarning)
-    warnings.filterwarnings("ignore", category=FutureWarning)
     fid = 33
     dim = 3
     benchmark(fid, dim)
