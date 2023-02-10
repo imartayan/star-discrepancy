@@ -8,9 +8,17 @@ def gaussian_step(x, avg_step):
     return np.clip(y, 0, 1)
 
 
+def gaussian_single_step(x, avg_step):
+    sigma = avg_step * np.sqrt(np.pi / 2)
+    k = np.random.randint(len(x))
+    y = x[:]
+    y[k] += np.random.normal(scale=sigma)
+    return np.clip(y, 0, 1)
+
+
 def alt_gaussian_step(x, avg_step):
     sign = np.random.choice([-1, 1], size=len(x))
-    sigma = avg_step
+    sigma = avg_step / 2
     step = np.random.normal(loc=avg_step, scale=sigma, size=len(x))
     y = x + sign * step
     return np.clip(y, 0, 1)
@@ -74,95 +82,9 @@ Local Search
 
 
 class LocalSearch(Search):
-    def __init__(self, avg_step, budget_factor):
+    def __init__(self, avg_step, budget_factor, n_points=1):
         super().__init__(budget_factor=budget_factor)
         self.avg_step = avg_step
-
-    def __call__(self, func: ioh.problem.RealSingleObjective):
-        n = func.meta_data.n_variables
-        d = len(func.bounds.lb)
-        n_calls = self.budget_factor * n * d
-        x = np.random.uniform(func.bounds.lb, func.bounds.ub)
-        fx = func(x)
-        for _ in range(n_calls):
-            y = self.local_step(x)
-            fy = func(y)
-            if fy > fx:
-                x = y
-                fx = fy
-        return func.state.current_best
-
-
-class GaussianSingleAxis(LocalSearch):
-    def local_step(self, x):
-        k = np.random.randint(len(x))
-        y = x[:]
-        y[k] += np.random.normal(scale=self.sigma)
-        return np.clip(y, 0, 1)
-
-
-class GaussianLocalSearch(LocalSearch):
-    def local_step(self, x):
-        return gaussian_step(x, self.avg_step)
-
-
-class AltGaussianLocalSearch(LocalSearch):
-    def local_step(self, x):
-        return alt_gaussian_step(x, self.avg_step)
-
-
-class ExpLocalSearch(LocalSearch):
-    def local_step(self, x):
-        return exp_step(x, self.avg_step)
-
-
-# class TrueExpLocalSearch(LocalSearch):
-#     def local_step(self, x):
-#         return exp_step(x, self.avg_step)
-
-
-"""
-Local Search with Resets
-"""
-
-
-class GaussianReset(GaussianLocalSearch):
-    def __init__(self, avg_step, threshold_factor, budget_factor):
-        super().__init__(avg_step=avg_step, budget_factor=budget_factor)
-        self.threshold_factor = threshold_factor
-
-    def __call__(self, func: ioh.problem.RealSingleObjective):
-        n = func.meta_data.n_variables
-        d = len(func.bounds.lb)
-        n_calls = self.budget_factor * n * d
-        x = np.random.uniform(func.bounds.lb, func.bounds.ub)
-        fx = func(x)
-        rep = 0
-        threshold = self.threshold_factor * d
-        for _ in range(n_calls):
-            if rep == threshold:
-                x = np.random.uniform(func.bounds.lb, func.bounds.ub)
-                fx = func(x)
-                rep = 0
-            y = self.local_step(x)
-            fy = func(y)
-            if fy > fx:
-                x = y
-                fx = fy
-                rep = 0
-            else:
-                rep += 1
-        return func.state.current_best
-
-
-"""
-Multiple Local Search at once
-"""
-
-
-class MultiLocalSearch(LocalSearch):
-    def __init__(self, avg_step, n_points, budget_factor):
-        super().__init__(avg_step=avg_step, budget_factor=budget_factor)
         self.n_points = n_points
 
     def __call__(self, func: ioh.problem.RealSingleObjective):
@@ -176,8 +98,8 @@ class MultiLocalSearch(LocalSearch):
             ]
         )
         fxs = np.array([func(x) for x in xs])
-        for _ in range(n_calls):
-            i = np.random.randint(len(xs))
+        for c in range(n_calls):
+            i = c % self.n_points
             y = self.local_step(xs[i])
             fy = func(y)
             if fy > fxs[i]:
@@ -186,22 +108,74 @@ class MultiLocalSearch(LocalSearch):
         return func.state.current_best
 
 
-class GaussianMultiLocalSearch(MultiLocalSearch):
+class GaussianSingleAxis(LocalSearch):
+    def local_step(self, x):
+        return gaussian_single_step(x, self.avg_step)
+
+
+class GaussianLocalSearch(LocalSearch):
     def local_step(self, x):
         return gaussian_step(x, self.avg_step)
 
 
-class ExpMultiLocalSearch(MultiLocalSearch):
+class ExpLocalSearch(LocalSearch):
     def local_step(self, x):
         return exp_step(x, self.avg_step)
 
 
 """
-Weighted Multiple Local Search at once
+Local Search with Resets
 """
 
 
-class WeightedMultiLocalSearch(MultiLocalSearch):
+class LocalSearchReset(LocalSearch):
+    def __init__(self, avg_step, threshold_factor, budget_factor, n_points=1):
+        super().__init__(
+            avg_step=avg_step, budget_factor=budget_factor, n_points=n_points
+        )
+        self.threshold_factor = threshold_factor
+
+    def __call__(self, func: ioh.problem.RealSingleObjective):
+        n = func.meta_data.n_variables
+        d = len(func.bounds.lb)
+        n_calls = self.budget_factor * n * d
+        xs = np.array(
+            [
+                np.random.uniform(func.bounds.lb, func.bounds.ub)
+                for _ in range(self.n_points)
+            ]
+        )
+        fxs = np.array([func(x) for x in xs])
+        stuck = np.zeros(self.n_points)
+        threshold = self.threshold_factor * d
+        for c in range(n_calls):
+            i = c % self.n_points
+            if stuck[i] == threshold:
+                xs[i] = np.random.uniform(func.bounds.lb, func.bounds.ub)
+                fxs[i] = func(xs[i])
+                stuck[i] = 0
+            y = self.local_step(xs[i])
+            fy = func(y)
+            if fy > fxs[i]:
+                xs[i] = y
+                fxs[i] = fy
+                stuck[i] = 0
+            else:
+                stuck[i] += 1
+        return func.state.current_best
+
+
+class GaussianReset(LocalSearchReset):
+    def local_step(self, x):
+        return gaussian_step(x, self.avg_step)
+
+
+"""
+Weighted Local Search
+"""
+
+
+class WeightedLocalSearch(LocalSearch):
     def __call__(self, func: ioh.problem.RealSingleObjective):
         n = func.meta_data.n_variables
         d = len(func.bounds.lb)
@@ -230,12 +204,12 @@ class WeightedMultiLocalSearch(MultiLocalSearch):
         return func.state.current_best
 
 
-class GaussianWeightedMultiLocalSearch(WeightedMultiLocalSearch):
+class GaussianWeightedLocalSearch(WeightedLocalSearch):
     def local_step(self, x):
         return gaussian_step(x, self.avg_step)
 
 
-class ExpWeightedMultiLocalSearch(WeightedMultiLocalSearch):
+class ExpWeightedLocalSearch(WeightedLocalSearch):
     def local_step(self, x):
         return exp_step(x, self.avg_step)
 
@@ -250,30 +224,6 @@ class AdaptiveLocalSearch(LocalSearch):
         n = func.meta_data.n_variables
         d = len(func.bounds.lb)
         n_calls = self.budget_factor * n * d
-        x = np.random.uniform(func.bounds.lb, func.bounds.ub)
-        fx = func(x)
-        for _ in range(n_calls):
-            y = self.local_step(x)
-            fy = func(y)
-            if fy > fx:
-                avg_step = np.mean(np.abs(y - x))
-                alpha = 0.8
-                self.avg_step = alpha * self.avg_step + (1 - alpha) * avg_step
-                x = y
-                fx = fy
-        return func.state.current_best
-
-
-class AltGaussianAdaptiveLocalSearch(AdaptiveLocalSearch):
-    def local_step(self, x):
-        return alt_gaussian_step(x, self.avg_step)
-
-
-class MultiAdaptiveLocalSearch(MultiLocalSearch):
-    def __call__(self, func: ioh.problem.RealSingleObjective):
-        n = func.meta_data.n_variables
-        d = len(func.bounds.lb)
-        n_calls = self.budget_factor * n * d
         xs = np.array(
             [
                 np.random.uniform(func.bounds.lb, func.bounds.ub)
@@ -281,8 +231,8 @@ class MultiAdaptiveLocalSearch(MultiLocalSearch):
             ]
         )
         fxs = np.array([func(x) for x in xs])
-        for _ in range(n_calls):
-            i = np.random.randint(len(xs))
+        for c in range(n_calls):
+            i = c % self.n_points
             y = self.local_step(xs[i])
             fy = func(y)
             if fy > fxs[i]:
@@ -294,7 +244,7 @@ class MultiAdaptiveLocalSearch(MultiLocalSearch):
         return func.state.current_best
 
 
-class AltGaussianMultiAdaptiveLocalSearch(MultiAdaptiveLocalSearch):
+class AltGaussianAdaptiveLocalSearch(AdaptiveLocalSearch):
     def local_step(self, x):
         return alt_gaussian_step(x, self.avg_step)
 
@@ -305,53 +255,12 @@ Simulated Annealing
 
 
 class SimulatedAnnealing(LocalSearch):
-    def __init__(self, avg_step, temp_init, temp_factor, budget_factor):
-        super().__init__(avg_step=avg_step, budget_factor=budget_factor)
-        self.temp_init = temp_init
-        self.temp_factor = temp_factor
-
-    def __call__(self, func: ioh.problem.RealSingleObjective):
-        n = func.meta_data.n_variables
-        d = len(func.bounds.lb)
-        n_calls = self.budget_factor * n * d
-        x = np.random.uniform(func.bounds.lb, func.bounds.ub)
-        fx = func(x)
-        temp = self.temp_init
-        for _ in range(n_calls):
-            y = self.local_step(x)
-            fy = func(y)
-            delta = fy - fx
-            if delta > 0 or np.random.random() < np.exp(delta / temp):
-                x = y
-                fx = fy
-            temp *= self.temp_factor
-        return func.state.current_best
-
-
-class GaussianSimulatedAnnealing(SimulatedAnnealing):
-    def local_step(self, x):
-        return gaussian_step(x, self.avg_step)
-
-
-class ExpSimulatedAnnealing(SimulatedAnnealing):
-    def local_step(self, x):
-        return exp_step(x, self.avg_step)
-
-
-"""
-Multi Simulated Annealing
-"""
-
-
-class MultiSimulatedAnnealing(SimulatedAnnealing):
-    def __init__(self, avg_step, n_points, temp_init, temp_factor, budget_factor):
+    def __init__(self, avg_step, temp_init, temp_decay, budget_factor, n_points=1):
         super().__init__(
-            avg_step=avg_step,
-            temp_init=temp_init,
-            temp_factor=temp_factor,
-            budget_factor=budget_factor,
+            avg_step=avg_step, budget_factor=budget_factor, n_points=n_points
         )
-        self.n_points = n_points
+        self.temp_init = temp_init
+        self.temp_decay = temp_decay
 
     def __call__(self, func: ioh.problem.RealSingleObjective):
         n = func.meta_data.n_variables
@@ -365,23 +274,23 @@ class MultiSimulatedAnnealing(SimulatedAnnealing):
         )
         fxs = np.array([func(x) for x in xs])
         temp = self.temp_init
-        for _ in range(n_calls):
-            i = np.random.randint(len(xs))
+        for c in range(n_calls):
+            i = c % self.n_points
             y = self.local_step(xs[i])
             fy = func(y)
             delta = fy - fxs[i]
             if delta > 0 or np.random.random() < np.exp(delta / temp):
                 xs[i] = y
                 fxs[i] = fy
-            temp *= self.temp_factor
+            temp *= self.temp_decay
         return func.state.current_best
 
 
-class GaussianMultiSimulatedAnnealing(MultiSimulatedAnnealing):
+class GaussianSimulatedAnnealing(SimulatedAnnealing):
     def local_step(self, x):
         return gaussian_step(x, self.avg_step)
 
 
-class ExpMultiSimulatedAnnealing(MultiSimulatedAnnealing):
+class ExpSimulatedAnnealing(SimulatedAnnealing):
     def local_step(self, x):
         return exp_step(x, self.avg_step)
