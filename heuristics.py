@@ -2,43 +2,30 @@ import ioh
 import numpy as np
 
 
+def uniform_step(x, avg_step):
+    amp = 2 * avg_step
+    y = -1
+    while np.any(y > 1) or np.any(y < 0):
+        y = x + np.random.uniform(-amp, amp, size=len(x))
+    return y
+
+
 def gaussian_step(x, avg_step):
     sigma = avg_step * np.sqrt(np.pi / 2)
-    y = x + np.random.normal(scale=sigma, size=len(x))
-    return np.clip(y, 0, 1)
-
-
-def gaussian_single_step(x, avg_step):
-    sigma = avg_step * np.sqrt(np.pi / 2)
-    k = np.random.randint(len(x))
-    y = x[:]
-    y[k] += np.random.normal(scale=sigma)
-    return np.clip(y, 0, 1)
-
-
-def alt_gaussian_step(x, avg_step):
-    sign = np.random.choice([-1, 1], size=len(x))
-    sigma = avg_step / 2
-    step = np.random.normal(loc=avg_step, scale=sigma, size=len(x))
-    y = x + sign * step
-    return np.clip(y, 0, 1)
+    y = -1
+    while np.any(y > 1) or np.any(y < 0):
+        y = x + np.random.normal(scale=sigma, size=len(x))
+    return y
 
 
 def exp_step(x, avg_step):
     beta = avg_step
-    sign = np.random.choice([-1, 1], size=len(x))
-    step = np.random.exponential(scale=beta, size=len(x))
-    y = x + sign * step
-    return np.clip(y, 0, 1)
-
-
-def biased_exp_step(x, avg_step):
-    beta = avg_step
-    if np.random.randint(2) == 0:
-        y = x + np.random.exponential(scale=beta, size=len(x))
-    else:
-        y = x - np.random.exponential(scale=beta, size=len(x))
-    return np.clip(y, 0, 1)
+    y = -1
+    while np.any(y > 1) or np.any(y < 0):
+        sign = np.random.choice([-1, 1], size=len(x))
+        step = np.random.exponential(scale=beta, size=len(x))
+        y = x + sign * step
+    return y
 
 
 """
@@ -108,9 +95,9 @@ class LocalSearch(Search):
         return func.state.current_best
 
 
-class GaussianSingleAxis(LocalSearch):
+class UniformLocalSearch(LocalSearch):
     def local_step(self, x):
-        return gaussian_single_step(x, self.avg_step)
+        return uniform_step(x, self.avg_step)
 
 
 class GaussianLocalSearch(LocalSearch):
@@ -165,9 +152,14 @@ class LocalSearchReset(LocalSearch):
         return func.state.current_best
 
 
-class GaussianReset(LocalSearchReset):
+class GaussianLocalSearchReset(LocalSearchReset):
     def local_step(self, x):
         return gaussian_step(x, self.avg_step)
+
+
+class ExpLocalSearchReset(LocalSearchReset):
+    def local_step(self, x):
+        return exp_step(x, self.avg_step)
 
 
 """
@@ -242,11 +234,6 @@ class AdaptiveLocalSearch(LocalSearch):
                 xs[i] = y
                 fxs[i] = fy
         return func.state.current_best
-
-
-class AltGaussianAdaptiveLocalSearch(AdaptiveLocalSearch):
-    def local_step(self, x):
-        return alt_gaussian_step(x, self.avg_step)
 
 
 """
