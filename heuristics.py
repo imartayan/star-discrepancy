@@ -134,13 +134,14 @@ class LocalSearchReset(LocalSearch):
         )
         fxs = np.array([func(x) for x in xs])
         stuck = np.zeros(self.n_points)
-        threshold = self.threshold_factor * d
+        threshold = self.threshold_factor * n_calls / self.n_points
         for c in range(n_calls):
             i = c % self.n_points
-            if stuck[i] == threshold:
+            if stuck[i] >= threshold:
                 xs[i] = np.random.uniform(func.bounds.lb, func.bounds.ub)
                 fxs[i] = func(xs[i])
                 stuck[i] = 0
+                continue
             y = self.local_step(xs[i])
             fy = func(y)
             if fy > fxs[i]:
@@ -207,7 +208,7 @@ class ExpWeightedLocalSearch(WeightedLocalSearch):
 
 
 """
-Adaptive Local Search (bad)
+Adaptive Local Search
 """
 
 
@@ -223,17 +224,21 @@ class AdaptiveLocalSearch(LocalSearch):
             ]
         )
         fxs = np.array([func(x) for x in xs])
+        step_range = self.avg_step
         for c in range(n_calls):
+            self.avg_step = step_range * (1.5 - c / n_calls)
             i = c % self.n_points
             y = self.local_step(xs[i])
             fy = func(y)
             if fy > fxs[i]:
-                avg_step = np.mean(np.abs(y - xs[i]))
-                alpha = 0.8
-                self.avg_step = alpha * self.avg_step + (1 - alpha) * avg_step
                 xs[i] = y
                 fxs[i] = fy
         return func.state.current_best
+
+
+class ExpAdaptiveLocalSearch(AdaptiveLocalSearch):
+    def local_step(self, x):
+        return exp_step(x, self.avg_step)
 
 
 """
