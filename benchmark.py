@@ -29,11 +29,11 @@ def get_algos(budget, steps, n_points):
         # | {"Brute Force": hr.BruteForce(budget)}
         # | {f"uniform ({s})": hr.UniformLocalSearch(s, budget) for s in steps}
         # | {f"gaussian ({s})": hr.GaussianLocalSearch(s, budget) for s in steps}
-        # | {f"exponential ({s})": hr.ExpLocalSearch(s, budget) for s in steps}
-        # | {
-        #     f"exponential ({s}, {n_points})": hr.ExpLocalSearch(s, budget, n_points)
-        #     for s in steps
-        # }
+        | {f"exponential ({s})": hr.ExpLocalSearch(s, budget) for s in steps}
+        | {
+            f"exponential ({s}, {n_points})": hr.ExpLocalSearch(s, budget, n_points)
+            for s in steps
+        }
         # | {
         #     f"exponential ({s}, {2*n_points})": hr.ExpLocalSearch(
         #         s, budget, 2 * n_points
@@ -46,24 +46,36 @@ def get_algos(budget, steps, n_points):
         #     )
         #     for s in steps
         # }
-        # | {f"exponential reset ({s}, 10)": hr.ExpReset(s, 10, budget) for s in steps}
+        # | {
+        #     f"exp reset ({s}, 0.1)": hr.ExpLocalSearchReset(s, 0.1, budget)
+        #     for s in steps
+        # }
         | {
-            f"ESA ({s}, 0.003, 0.999)": hr.ExpSimulatedAnnealing(
+            f"exp reset ({s}, 0.2)": hr.ExpLocalSearchReset(s, 0.2, budget)
+            for s in steps
+        }
+        # | {
+        #     f"exp reset ({s}, 0.3)": hr.ExpLocalSearchReset(s, 0.3, budget)
+        #     for s in steps
+        # }
+        # | {f"exp adaptative ({s})": hr.ExpAdaptiveLocalSearch(s, budget) for s in steps}
+        | {
+            f"exp simulated annealing ({s}, 0.003, 0.999)": hr.ExpSimulatedAnnealing(
                 s, 0.003, 0.999, budget
             )
             for s in steps
         }
-        | {
-            f"ESA ({s}, 0.005, 0.997)": hr.ExpSimulatedAnnealing(
-                s, 0.005, 0.997, budget
-            )
-            for s in steps
-        }
+        # | {
+        #     f"exp simulated annealing ({s}, 0.005, 0.997)": hr.ExpSimulatedAnnealing(
+        #         s, 0.005, 0.997, budget
+        #     )
+        #     for s in steps
+        # }
     )
 
 
 def print_table(scores):
-    print("table ====================")
+    print("Table ====================")
     for name, val in scores.items():
         print(f"{name}", end="")
         for v in val:
@@ -103,20 +115,21 @@ def plot_chart(scores, save=None):
 
 
 if __name__ == "__main__":
-    dim = 3
     rep = 200
     n_points = 2
     steps = [0.1]
     scores = {}
-    for fid in [33, 43, 53]:
-        print(f"PROBLEM {fid} ====================")
-        for budget in [20, 200]:
-            print(f"BUDGET {budget} --------------------")
-            stats = benchmark(get_algos(budget, steps, n_points), fid, dim, rep)
-            for name, (m, e) in stats.items():
-                print(f"{name}\t{'%.3e' % m} ± {'%.0e' % e}")
-                if name not in scores:
-                    scores[name] = []
-                scores[name].append(m)
+    for dim in [3]:
+        print(f"DIM {dim} ====================")
+        for fid in [53, 56, 59]:
+            print(f"PROBLEM {fid} ====================")
+            for budget in [20, 200]:
+                print(f"BUDGET {budget} --------------------")
+                stats = benchmark(get_algos(budget, steps, n_points), fid, dim, rep)
+                for name, (m, e) in stats.items():
+                    print(f"{name}\t{'%.3e' % m} ± {'%.0e' % e}")
+                    if name not in scores:
+                        scores[name] = []
+                    scores[name].append(m)
     print_table(scores)
     # plot_chart(scores)
