@@ -224,15 +224,16 @@ class AdaptiveLocalSearch(LocalSearch):
             ]
         )
         fxs = np.array([func(x) for x in xs])
-        step_range = self.avg_step
+        self.avg_step *= 2
+        decay = (1 / 2) ** (1 / n_calls)
         for c in range(n_calls):
-            self.avg_step = step_range * (1.5 - c / n_calls)
             i = c % self.n_points
             y = self.local_step(xs[i])
             fy = func(y)
             if fy > fxs[i]:
                 xs[i] = y
                 fxs[i] = fy
+            self.avg_step *= decay
         return func.state.current_best
 
 
